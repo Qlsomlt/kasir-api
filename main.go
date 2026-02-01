@@ -1,17 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/spf13/viper"
 )
 
 type Produk struct {
@@ -31,11 +25,6 @@ var produk = []Produk{
 	{ID: 1, Nama: "Indomie", Harga: 1500, Stok: 10},
 	{ID: 2, Nama: "KitKat", Harga: 8000, Stok: 28},
 	{ID: 3, Nama: "LifeBoy", Harga: 5000, Stok: 41},
-}
-
-type Config struct {
-	Port   string `mapstructure:"PORT"`
-	DBConn string `mapstructure:"DB_CONN"`
 }
 
 var kategori = []Kategori{
@@ -184,49 +173,6 @@ func deleteKategoriByID(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	// 1. Setup Viper
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	if _, err := os.Stat(".env"); err == nil {
-		viper.SetConfigFile(".env")
-		_ = viper.ReadInConfig()
-	}
-
-	config := Config{
-		Port:   viper.GetString("PORT"),
-		DBConn: viper.GetString("DATABASE_URL"),
-	}
-
-	// 2. Establish a Single Connection
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, config.DBConn)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	// Ensure the connection closes when the app stops
-	defer conn.Close(ctx)
-
-	// 3. Simple Ping to verify
-	err = conn.Ping(ctx)
-	if err != nil {
-		log.Fatalf("Database unreachable: %v\n", err)
-	}
-
-	fmt.Println("Connected to Supabase successfully using pgx.Connect!")
-
-	// 4. Start Server
-	if config.Port == "" {
-		config.Port = "8080"
-	}
-	addr := "0.0.0.0:" + config.Port
-	fmt.Printf("Server running at %s\n", addr)
-
-	err = http.ListenAndServe(addr, nil)
-	if err != nil {
-		log.Fatalf("Server failed: %v", err)
-	}
-
 	// GET localhost:8080/api/produk/
 	http.HandleFunc("/api/produk/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
@@ -304,9 +250,6 @@ func main() {
 		})
 	})
 
-	if err != nil {
-		fmt.Println("Server running at http://localhost:8080")
-	}
-
+	fmt.Println("Server running at http://localhost:8080")
 	http.ListenAndServe(":8080", nil)
 }
