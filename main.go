@@ -185,28 +185,23 @@ func deleteKategoriByID(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	// 1. Tell Viper where to look
+	// 1. Tell Viper
 	viper.SetConfigFile(".env")
-	viper.AutomaticEnv() // This is critical for Railway/Production
-
-	// 2. Try to read the file, but don't crash if it's missing (it might be in OS env)
+	viper.AutomaticEnv()
 	if err := viper.ReadInConfig(); err != nil {
 		fmt.Println("Note: .env file not found, using system environment variables")
 	}
 
-	// 3. Get the connection string
 	// Check "DATABASE_URL" first, then fallback to "DB_CONN"
 	dbConn := viper.GetString("DATABASE_URL")
 	if dbConn == "" {
 		dbConn = viper.GetString("DB_CONN")
 	}
-
-	// 4. STOP if it's still empty
 	if dbConn == "" {
 		log.Fatal("Error: Database connection string is empty. Check your .env file or Environment Variables.")
 	}
 
-	// 5. Connect
+	// Connect
 	ctx := context.Background()
 	fmt.Printf("Attempting to connect to: %s\n", dbConn) // Debug line
 
@@ -215,7 +210,6 @@ func main() {
 		log.Fatalf("Unable to connect to database: %v", err)
 	}
 	defer conn.Close(ctx)
-
 	fmt.Println("Successfully connected to the database!")
 
 	// GET localhost:8080/api/produk/
@@ -289,15 +283,15 @@ func main() {
 	// 3. Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if err := conn.Ping(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "ERROR", "message": "Database unreachable"})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "OK",
-			"message": "API running",
-		})
+			"status": "OK", "message": "API and DB running"})
 	})
-
-	if err != nil {
-		fmt.Println("Server running at http://localhost:8080")
-	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Hello from Kasir API!")
@@ -307,11 +301,8 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-
 	fmt.Printf("Server running at http://localhost:%s\n", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		fmt.Println("Error starting server:", err)
+		log.Fatalf("Error starting server: %v", err)
 	}
-
-	http.ListenAndServe(":8080", nil)
 }
