@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
+
+	"os"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/spf13/viper"
@@ -184,48 +185,38 @@ func deleteKategoriByID(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	// 1. Setup Viper
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	// 1. Tell Viper where to look
+	viper.SetConfigFile(".env")
+	viper.AutomaticEnv() // This is critical for Railway/Production
 
-	if _, err := os.Stat(".env"); err == nil {
-		viper.SetConfigFile(".env")
-		_ = viper.ReadInConfig()
+	// 2. Try to read the file, but don't crash if it's missing (it might be in OS env)
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Println("Note: .env file not found, using system environment variables")
 	}
 
-	config := Config{
-		Port:   viper.GetString("PORT"),
-		DBConn: viper.GetString("DATABASE_URL"),
+	// 3. Get the connection string
+	// Check "DATABASE_URL" first, then fallback to "DB_CONN"
+	dbConn := viper.GetString("DATABASE_URL")
+	if dbConn == "" {
+		dbConn = viper.GetString("DB_CONN")
 	}
 
-	// 2. Establish a Single Connection
+	// 4. STOP if it's still empty
+	if dbConn == "" {
+		log.Fatal("Error: Database connection string is empty. Check your .env file or Environment Variables.")
+	}
+
+	// 5. Connect
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, config.DBConn)
+	fmt.Printf("Attempting to connect to: %s\n", dbConn) // Debug line
+
+	conn, err := pgx.Connect(ctx, dbConn)
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+		log.Fatalf("Unable to connect to database: %v", err)
 	}
-	// Ensure the connection closes when the app stops
 	defer conn.Close(ctx)
 
-	// 3. Simple Ping to verify
-	err = conn.Ping(ctx)
-	if err != nil {
-		log.Fatalf("Database unreachable: %v\n", err)
-	}
-
-	fmt.Println("Connected to Supabase successfully using pgx.Connect!")
-
-	// 4. Start Server
-	if config.Port == "" {
-		config.Port = "8080"
-	}
-	addr := "0.0.0.0:" + config.Port
-	fmt.Printf("Server running at %s\n", addr)
-
-	err = http.ListenAndServe(addr, nil)
-	if err != nil {
-		log.Fatalf("Server failed: %v", err)
-	}
+	fmt.Println("Successfully connected to the database!")
 
 	// GET localhost:8080/api/produk/
 	http.HandleFunc("/api/produk/", func(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +297,20 @@ func main() {
 
 	if err != nil {
 		fmt.Println("Server running at http://localhost:8080")
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello from Kasir API!")
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	fmt.Printf("Server running at http://localhost:%s\n", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		fmt.Println("Error starting server:", err)
 	}
 
 	http.ListenAndServe(":8080", nil)
