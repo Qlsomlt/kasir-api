@@ -59,16 +59,22 @@ func (repo *TransactionRepository) CreateTransaction(items []models.CheckoutItem
 	}
 
 	for i := range details {
+		// Pastikan kita mengupdate struct asli agar response JSON nanti lengkap
 		details[i].TransactionID = transactionID
-		_, err = tx.Exec("INSERT INTO transaction_details (transaction_id, product_id, quantity, subtotal) VALUES ($1, $2, $3, $4)",
-			transactionID, details[i].ProductID, details[i].Quantity, details[i].Subtotal)
-		if err != nil {
-			return nil, err
-		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, err
+		// Gunakan query yang sama
+		_, err = tx.Exec(`
+        INSERT INTO transaction_details (transaction_id, product_id, quantity, subtotal) 
+        VALUES ($1, $2, $3, $4)`,
+			transactionID,
+			details[i].ProductID,
+			details[i].Quantity,
+			details[i].Subtotal,
+		)
+		if err != nil {
+			// Jika satu detail gagal, tx.Rollback() di defer akan membatalkan semuanya
+			return nil, fmt.Errorf("failed to insert detail: %v", err)
+		}
 	}
 
 	return &models.Transaction{
