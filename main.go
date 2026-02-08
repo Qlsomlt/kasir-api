@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,7 +11,11 @@ import (
 
 	"os"
 
-	"github.com/jackc/pgx/v5"
+	"kasir-api/handlers"
+	"kasir-api/repositories"
+	"kasir-api/services"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/spf13/viper"
 )
 
@@ -202,15 +206,18 @@ func main() {
 	}
 
 	// Connect
-	ctx := context.Background()
-	fmt.Printf("Attempting to connect to: %s\n", dbConn) // Debug line
-
-	conn, err := pgx.Connect(ctx, dbConn)
+	db, err := sql.Open("pgx", dbConn) // Needs: import _ "github.com/jackc/pgx/v5/stdlib"
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v", err)
 	}
-	defer conn.Close(ctx)
-	fmt.Println("Successfully connected to the database!")
+	defer db.Close()
+
+	transactionRepo := repositories.NewTransactionRepository(db)
+	transactionService := services.NewTransactionService(transactionRepo)
+	transactionHandler := handlers.NewTransactionHandler(transactionService)
+
+	// 4. Routes
+	http.HandleFunc("/api/checkout", transactionHandler.HandleCheckout)
 
 	// GET localhost:8080/api/produk/
 	http.HandleFunc("/api/produk/", func(w http.ResponseWriter, r *http.Request) {
@@ -283,14 +290,23 @@ func main() {
 	// 3. Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := conn.Ping(ctx); err != nil {
+
+		// 1. Use 'db' instead of 'conn'
+		// 2. sql.DB.Ping() doesn't strictly require a context,
+		// but PingContext(r.Context()) is best practice for APIs.
+		if err := db.PingContext(r.Context()); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			json.NewEncoder(w).Encode(map[string]string{
-				"status": "ERROR", "message": "Database unreachable"})
+				"status":  "ERROR",
+				"message": "Database unreachable",
+			})
 			return
 		}
+
 		json.NewEncoder(w).Encode(map[string]string{
-			"status": "OK", "message": "API and DB running"})
+			"status":  "OK",
+			"message": "API and DB running",
+		})
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
